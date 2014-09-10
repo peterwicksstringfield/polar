@@ -59,8 +59,7 @@ fromPolar p = realPart p :+ imagPart p
 -- | Convert to polar form.
 fromComplex :: (RealFloat a) => Complex a -> Polar a
 {-# INLINE fromComplex #-}
-fromComplex c = mkPolar_ r theta
-    where !(r, theta) = C.polar c
+fromComplex = uncurry mkPolar_ . C.polar
 
 -- | Extracts the real part of a complex number.
 realPart :: (RealFloat a) => Polar a -> a
