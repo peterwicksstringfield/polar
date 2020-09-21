@@ -1,6 +1,19 @@
-{-# LANGUAGE CPP, DeriveDataTypeable #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+#if __GLASGOW_HASKELL__ >= 786
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
+#endif
+
 module Data.Complex.Polar (
-    Polar(..),
+#if __GLASGOW_HASKELL__ >= 800
+    Polar((:<)),
+#elif __GLASGOW_HASKELL >= 786
+    Polar,
+    pattern (:<),
+#else
+    Polar,
+#endif
     fromPolar,
     fromComplex,
     realPart,
@@ -25,7 +38,11 @@ import Data.Data (Data)
 import Hugs.Prelude(Num(fromInt), Fractional(fromDouble))
 #endif
 
-infix 6 :<
+import Text.Read (parens)
+import Text.ParserCombinators.ReadPrec (prec, step)
+import Text.Read.Lex (Lexeme (Ident))
+
+infix 6 :<<
 
 -- -----------------------------------------------------------------------------
 -- The Polar type
@@ -35,15 +52,45 @@ infix 6 :<
 -- For a complex number @z@, @'abs' z@ is a number with the magnitude of @z@,
 -- but oriented in the positive real direction, whereas @'signum' z@
 -- has the phase of @z@, but unit magnitude.
-data (RealFloat a) => Polar a = !a :< !a -- ^ forms a complex number from its magnitude
-                                         --   and its phase in radians.
-# if __GLASGOW_HASKELL__
-    deriving (Eq, Show, Read, Data, Typeable)
-# else
-    deriving (Eq, Show, Read)
-# endif
+data (RealFloat a) => Polar a = !a :<< !a -- ^ forms a complex number from its magnitude
+                                          --   and its phase in radians.
+#if __GLASGOW_HASKELL__
+    deriving (Eq, Data, Typeable)
+#else
+    deriving Eq
+#endif
 
--- | Wrap phase back in interval (-pi,pi].
+#if __GLASGOW_HASKELL__ >= 786
+infix 6 :<
+
+-- | Smart constructor that canonicalizes the magnitude and phase.
+pattern r :< theta <-
+  ( \(r :<< theta) -> Just (r, theta) ->
+      Just (r, theta)
+    )
+  where
+    r :< theta = mkPolar r theta
+#endif
+
+instance (RealFloat a, Show a) => Show (Polar a) where
+    {-# SPECIALISE instance Show (Polar Float) #-}
+    {-# SPECIALISE instance Show (Polar Double) #-}
+    showsPrec d (r :<< theta) =
+      showParen (d >= 11) (showString "mkPolar "
+                           . showsPrec 11 r
+                           . showString " "
+                           . showsPrec 11 theta)
+
+instance (RealFloat a, Read a) => Read (Polar a) where
+    {-# SPECIALISE instance Read (Polar Float) #-}
+    {-# SPECIALISE instance Read (Polar Double) #-}
+    readsPrec d = readParen (d > 10)
+                        (\s -> do ("mkPolar", s2) <- lex s
+                                  (r, s3) <- readsPrec 11 s2
+                                  (theta, s4) <- readsPrec 11 s3
+                                  return (mkPolar r theta, s4))
+
+-- | Wrap phase back in interval @(-'pi', 'pi']@.
 wrap :: (RealFloat a) => a -> a
 {-# SPECIALISE wrap :: Float  -> Float   #-}
 {-# SPECIALISE wrap :: Double -> Double  #-}
@@ -63,30 +110,31 @@ fromComplex = uncurry mkPolar_ . C.polar
 
 -- | Extracts the real part of a complex number.
 realPart :: (RealFloat a) => Polar a -> a
-realPart (r :< theta) = r * cos theta
+realPart (r :<< theta) = r * cos theta
 
 -- | Extracts the imaginary part of a complex number.
 imagPart :: (RealFloat a) => Polar a -> a
-imagPart (r:<theta) = r * sin theta
+imagPart (r :<< theta) = r * sin theta
 
 -- | The conjugate of a complex number.
 conjugate :: (RealFloat a) => Polar a -> Polar a
 {-# SPECIALISE conjugate :: Polar Float  -> Polar Float #-}
 {-# SPECIALISE conjugate :: Polar Double -> Polar Double #-}
-conjugate (r:<theta) = mkPolar r (negate theta)
+conjugate (r :<< theta) = mkPolar r (negate theta)
 
 -- | Form a complex number from polar components of magnitude and phase.
--- The phase is expected to be within (-pi,pi].
+-- The magnitude and phase are expected to be in canonical form.
 mkPolar_ :: RealFloat a => a -> a -> Polar a
 {-# SPECIALISE mkPolar_ :: Float  -> Float  -> Polar Float  #-}
 {-# SPECIALISE mkPolar_ :: Double -> Double -> Polar Double #-}
-mkPolar_ r theta = r :< theta
+mkPolar_ r theta = r :<< theta
 
 -- | Form a complex number from polar components of magnitude and phase.
--- Phase is wrapped into (-pi,pi].
 mkPolar :: RealFloat a => a -> a -> Polar a
 {-# SPECIALISE mkPolar :: Float  -> Float  -> Polar Float  #-}
 {-# SPECIALISE mkPolar :: Double -> Double -> Polar Double #-}
+mkPolar r theta | r == 0 = 0 :<< 0
+mkPolar r theta | r < 0 = mkPolar (- r) (theta + pi)
 mkPolar r theta = mkPolar_ r (wrap theta)
 
 -- | @'cis' t@ is a complex value with magnitude @1@
@@ -103,47 +151,48 @@ cis theta = mkPolar 1 theta
 polar :: (RealFloat a) => Polar a -> (a,a)
 {-# SPECIALISE polar :: Polar Double -> (Double,Double) #-}
 {-# SPECIALISE polar :: Polar Float  -> (Float,Float)   #-}
-polar (r:<theta) = (r,theta)
+polar (r :<< theta) = (r,theta)
 
 -- | The nonnegative magnitude of a complex number.
 magnitude :: (RealFloat a) => Polar a -> a
 {-# SPECIALISE magnitude :: Polar Float  -> Float  #-}
 {-# SPECIALISE magnitude :: Polar Double -> Double #-}
-magnitude (r:<_) = r
+magnitude (r :<< _) = r
 
 -- | The phase of a complex number, in the range @(-'pi', 'pi']@.
 -- If the magnitude is zero, then so is the phase.
 phase :: (RealFloat a) => Polar a -> a
 {-# SPECIALISE phase :: Polar Float  -> Float  #-}
 {-# SPECIALISE phase :: Polar Double -> Double #-}
-phase (_:<theta) = theta
+phase (_ :<< theta) = theta
 
 instance (RealFloat a) => Num (Polar a) where
     {-# SPECIALISE instance Num (Polar Float)  #-}
     {-# SPECIALISE instance Num (Polar Double) #-}
-    z + z'      = fromComplex (fromPolar z + fromPolar z')
-    z - z'      = fromComplex (fromPolar z - fromPolar z')
-    z * z'      = mkPolar  (magnitude z * magnitude z') (phase z + phase z')
-    negate z    = mkPolar_ (negate (magnitude z)) (phase z)
-    abs z       = mkPolar_ (magnitude z) 0
-    signum z    = mkPolar_ 1 (phase z)
-    fromInteger = flip mkPolar 0 . fromInteger
+    z + z'           = fromComplex (fromPolar z + fromPolar z')
+    z - z'           = fromComplex (fromPolar z - fromPolar z')
+    z * z'           = mkPolar  (magnitude z * magnitude z') (phase z + phase z')
+    negate z         = mkPolar  (negate (magnitude z)) (phase z)
+    abs z            = mkPolar_ (magnitude z) 0
+    signum (0 :<< _) = 0
+    signum z         = mkPolar_ 1 (phase z)
+    fromInteger      = flip mkPolar 0 . fromInteger
 
 instance (RealFloat a) => Fractional (Polar a) where
     {-# SPECIALISE instance Fractional (Polar Float)  #-}
     {-# SPECIALISE instance Fractional (Polar Double) #-}
-    z / z'          = mkPolar  (magnitude z / magnitude z') (phase z - phase z')
-    fromRational r  = mkPolar_ (fromRational r) 0
+    z / z'          = mkPolar (magnitude z / magnitude z') (phase z - phase z')
+    fromRational r  = mkPolar (fromRational r) 0
 
 instance  (RealFloat a) => Floating (Polar a)  where
     {-# SPECIALISE instance Floating (Polar Float) #-}
     {-# SPECIALISE instance Floating (Polar Double) #-}
     pi             = mkPolar_ pi 0
-    exp (r:<theta) = exp (r * cos theta) :< r * sin theta
-    log (r:<theta) = fromComplex (log r :+ theta)
+    exp (r :<< theta) = mkPolar (exp (r * cos theta)) (r * sin theta)
+    log (r :<< theta) = fromComplex (log r :+ theta)
     
-    -- sqrt (0:<_)       =  0
-    -- sqrt z@(r:<theta) =  u :+ (if y < 0 then -v else v)
+    -- sqrt (0 :<< _)       =  0
+    -- sqrt z@(r :<< theta) =  u :+ (if y < 0 then -v else v)
     --                           where (u,v) = if x < 0 then (v',u') else (u',v')
     --                                 v'    = abs y / (u'*2)
     --                                 u'    = sqrt ((magnitude z + abs x) / 2)
