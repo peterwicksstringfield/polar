@@ -1,5 +1,5 @@
 Name:               polar
-Version:            0.0.0
+Version:            0.1.0
 Synopsis:           Complex numbers in polar form
 Description:        Complex numbers in polar form
 License:            BSD3
@@ -11,9 +11,9 @@ Maintainer:         Stefan Kersten <sk@xdv.org>
 Stability:          provisional
 Homepage:           http://space.k-hornz.de/polar
 Bug-Reports:        http://github.com/kaoskorobase/polar/issues/
-Tested-With:        GHC == 6.10.1, GHC == 6.10.4
+Tested-With:        GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.4, GHC == 8.6.5, GHC == 8.8.4, GHC == 8.10.2
 Build-Type:         Simple
-Cabal-Version:      >= 1.2
+Cabal-Version:      >= 1.8
 
 Library
   Exposed-Modules:  Data.Complex.Polar
@@ -22,3 +22,11 @@ Library
 Source-Repository head
     Type:               git
     Location:           git://github.com/kaoskorobase/polar.git
+
+test-suite polar-test
+  Type:             exitcode-stdio-1.0
+  Main-Is:          Main.hs
+  Hs-Source-Dirs:   test
+  Build-Depends:    base >= 3 && < 5,
+                    HUnit >= 1.6 && < 1.7,
+                    polar
